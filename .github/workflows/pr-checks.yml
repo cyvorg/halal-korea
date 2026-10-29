@@ -68,13 +68,31 @@ jobs:
       - name: "Gate: only known pre-existing failures may fail"
         run: |
           set -e
+          : > actual-failures.txt
           for f in out-main.txt out-users.txt; do
-            if ! grep -qE '^(OK|FAILED)' "$f"; then
-              echo "::error::Suite output $f has no completion summary (runner died)"; exit 1
+            [ -s "$f" ] || { echo "::error::$f is missing or empty (runner crashed)"; exit 1; }
+            if ! grep -qE '^Ran [1-9][0-9]* tests' "$f"; then
+              echo "::error::$f: no 'Ran N tests' line with N>0 (crash, truncation, or zero tests)"; exit 1
             fi
+            if grep -qE 'skipped=[1-9][0-9]*' "$f"; then
+              echo "::error::$f: unexpected skipped tests"; exit 1
+            fi
+            summary=$(grep -E '^(OK|FAILED)' "$f" | tail -1)
+            [ -n "$summary" ] || { echo "::error::$f: no OK/FAILED completion summary (crash or truncation)"; exit 1; }
+            expected=0
+            if echo "$summary" | grep -q '^FAILED'; then
+              fl=$(echo "$summary" | grep -oE 'failures=[0-9]+' | grep -oE '[0-9]+' || true)
+              er=$(echo "$summary" | grep -oE 'errors=[0-9]+' | grep -oE '[0-9]+' || true)
+              expected=$(( ${fl:-0} + ${er:-0} ))
+            fi
+            grep -E '^(FAIL|ERROR): ' "$f" | sed -E 's/^[A-Z]+: [^(]+\(([^)]+)\).*/\1/' | sort -u > "parsed-$f"
+            actual=$(wc -l < "parsed-$f" | tr -d ' ')
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$f: summary reports $expected failure(s) but parser extracted $actual (parser mismatch, refusing to gate)"; exit 1
+            fi
+            cat "parsed-$f" >> actual-failures.txt
           done
-          grep -hE '^(FAIL|ERROR): ' out-main.txt out-users.txt \
-            | sed -E 's/^[A-Z]+: [^(]+\(([^)]+)\).*/\1/' | sort -u > actual-failures.txt
+          sort -u actual-failures.txt -o actual-failures.txt
           grep -vE '^\s*(#|$)' .github/known-failing-tests.txt | sort > known.txt
           comm -23 actual-failures.txt known.txt > new-failures.txt
           if [ -s new-failures.txt ]; then
