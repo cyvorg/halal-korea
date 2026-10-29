@@ -882,7 +882,10 @@ class PlaceEditSuggestionAdmin(admin.ModelAdmin):
 
             logger = logging.getLogger(__name__)
 
+            # Reload the place: bulk actions hold one place instance per
+            # suggestion, so an earlier approval would otherwise be overwritten.
             place = suggestion.place
+            place.refresh_from_db()
             field_name = suggestion.field_name
             new_value = suggestion.suggested_value
 
@@ -1258,7 +1261,10 @@ class PlaceImageSuggestionAdmin(admin.ModelAdmin):
 
             logger = logging.getLogger(__name__)
 
+            # Reload the place: bulk actions hold one place instance per
+            # suggestion, so an earlier approval would otherwise be overwritten.
             place = suggestion.place
+            place.refresh_from_db()
             image_url = suggestion.image.url
 
             logger.info(
