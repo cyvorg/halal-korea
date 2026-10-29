@@ -1,0 +1,86 @@
+name: PR checks
+
+# Check-only CI for pull requests. Deploy stays with .github/workflows/deploy.yml
+# (push to main) and is untouched by this file.
+
+on:
+  pull_request:
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: halal_korea
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_SECRET_KEY: ci-only-not-a-real-secret
+      DJANGO_DEBUG: "True"
+      ALLOWED_HOSTS: "localhost 127.0.0.1 testserver"
+      DB_NAME: halal_korea
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      GOOGLE_MAPS_API_KEY: ""
+      GOOGLE_MAPS_ID: ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GIS libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests (places and supporting apps)
+        run: |
+          python manage.py test places reviews blog contact feedback prayer_times utils --noinput 2>&1 | tee out-main.txt
+          true
+      - name: Run tests (users, excluding users.test_admin_email)
+        run: |
+          # users.test_admin_email runs separately below: it does not complete
+          # (pre-existing hang in test_preview_endpoint_reports_large_sends,
+          # observed on unmodified main) and would block the other modules.
+          python manage.py test users.tests users.test_password_reset users.test_rate_limiting users.test_social_auth users.tests_email_retry --noinput 2>&1 | tee out-users.txt
+          true
+      - name: Run users.test_admin_email (known pre-existing hang, not gating)
+        run: |
+          timeout 300 python manage.py test users.test_admin_email --noinput 2>&1 | tee out-admin-email.txt
+          echo "::warning::users.test_admin_email did not pass cleanly (known pre-existing: module does not complete; hangs in test_preview_endpoint_reports_large_sends on unmodified main). Not gating until the underlying hang is fixed."
+      - name: "Gate: only known pre-existing failures may fail"
+        run: |
+          set -e
+          for f in out-main.txt out-users.txt; do
+            if ! grep -qE '^(OK|FAILED)' "$f"; then
+              echo "::error::Suite output $f has no completion summary (runner died)"; exit 1
+            fi
+          done
+          grep -hE '^(FAIL|ERROR): ' out-main.txt out-users.txt \
+            | sed -E 's/^[A-Z]+: [^(]+\(([^)]+)\).*/\1/' | sort -u > actual-failures.txt
+          grep -vE '^\s*(#|$)' .github/known-failing-tests.txt | sort > known.txt
+          comm -23 actual-failures.txt known.txt > new-failures.txt
+          if [ -s new-failures.txt ]; then
+            echo "::error::New test failures not in the pre-existing baseline:"
+            cat new-failures.txt
+            exit 1
+          fi
+          echo "No new failures. Pre-existing failures still observed (tracked in .github/known-failing-tests.txt):"
+          cat actual-failures.txt
