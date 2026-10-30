@@ -61,15 +61,19 @@ jobs:
           # observed on unmodified main) and would block the other modules.
           python manage.py test users.tests users.test_password_reset users.test_rate_limiting users.test_social_auth users.tests_email_retry --noinput 2>&1 | tee out-users.txt
           true
-      - name: Run users.test_admin_email (known pre-existing hang, not gating)
+      - name: Run users.test_admin_email (slow module, gated with timeout)
         run: |
-          timeout 300 python manage.py test users.test_admin_email --noinput 2>&1 | tee out-admin-email.txt
-          echo "::warning::users.test_admin_email did not pass cleanly (known pre-existing: module does not complete; hangs in test_preview_endpoint_reports_large_sends on unmodified main). Not gating until the underlying hang is fixed."
+          # Slow module (~3 min: per-send cost, e.g. AdminEmailTypedConfirmationTests
+          # alone is ~100s for 7 tests on unmodified main). Not a hang. Gated like
+          # the other suites; the 360s timeout bounds it, and a timeout kills the
+          # completion summary, which fails the gate below.
+          timeout 360 python manage.py test users.test_admin_email --noinput 2>&1 | tee out-admin-email.txt
+          true
       - name: "Gate: only known pre-existing failures may fail"
         run: |
           set -e
           : > actual-failures.txt
-          for f in out-main.txt out-users.txt; do
+          for f in out-main.txt out-users.txt out-admin-email.txt; do
             [ -s "$f" ] || { echo "::error::$f is missing or empty (runner crashed)"; exit 1; }
             if ! grep -qE '^Ran [1-9][0-9]* tests' "$f"; then
               echo "::error::$f: no 'Ran N tests' line with N>0 (crash, truncation, or zero tests)"; exit 1

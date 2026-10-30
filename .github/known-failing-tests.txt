@@ -3,9 +3,8 @@
 # PR checks fail only on failures NOT listed here.
 # Source: local sequential runs, Python 3.12 / PostgreSQL 18 / PostGIS 3.6,
 # pristine main vs this branch, 2026-10-29.
-# Additionally, users.test_admin_email does not complete (hangs in
-# test_preview_endpoint_reports_large_sends on unmodified main); it runs in its
-# own non-gating step until the hang is fixed.
+# users.test_admin_email is slow (~3 min on unmodified main) but completes; it
+# runs in its own gated step with a 360s timeout.
 places.test_search.SearchAnalyticsTest.test_category_filter_logged
 places.test_suggestions.PlaceSuggestionFormTest.test_form_requires_at_least_one_suggestion
 places.tests.HalalPlaceFormTest.test_form_category_choices
@@ -21,3 +20,4 @@ utils.tests.test_middleware.MonitoringMiddlewareTests.test_middleware_tracks_res
 users.test_social_auth.SocialAuthIntegrationTest.test_login_template_has_social_buttons
 users.test_social_auth.SocialAuthIntegrationTest.test_register_template_has_social_buttons
 users.test_social_auth.SocialAuthIntegrationTest.test_social_auth_urls_configured
+users.test_admin_email.AdminEmailEnhancedFeaturesTests.test_stale_ids_tolerated_in_all_audience_mode
