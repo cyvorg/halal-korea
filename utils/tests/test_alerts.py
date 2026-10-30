@@ -15,6 +15,10 @@ class AlertRuleEvaluationTests(TestCase):
     """Test alert rule evaluation."""
     
     def setUp(self):
+        # Monitoring middleware threads from earlier tests commit RequestLog
+        # rows outside test transactions; clear them so aggregate checks only
+        # see this test's rows. No requests are made during these tests.
+        RequestLog.objects.all().delete()
         self.manager = AlertManager()
         self.user = User.objects.create_user(
             username='testuser',

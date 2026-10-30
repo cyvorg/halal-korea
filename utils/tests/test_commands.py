@@ -18,6 +18,10 @@ class AggregateMetricsCommandTests(TestCase):
     """Test aggregate_metrics management command."""
     
     def setUp(self):
+        # Clear RequestLog/SystemMetric rows committed by monitoring
+        # middleware threads from earlier tests (outside test transactions).
+        RequestLog.objects.all().delete()
+        SystemMetric.objects.all().delete()
         self.user = User.objects.create_user(
             username='testuser',
             password='testpass'
@@ -174,6 +178,10 @@ class CheckMonitoringHealthCommandTests(TestCase):
 
     def setUp(self):
         cache.clear()
+        # See AggregateMetricsCommandTests: drop rows leaked by monitoring
+        # middleware threads from earlier tests.
+        RequestLog.objects.all().delete()
+        SystemMetric.objects.all().delete()
     
     def test_check_monitoring_health_command_runs(self):
         """Test that check_monitoring_health command runs successfully."""

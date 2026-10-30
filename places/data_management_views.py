@@ -142,17 +142,39 @@ def import_places_view(request):
                     messages.error(request, f"Unsupported format: {file_format}")
                     return redirect("places_data_management:import_places")
 
-                # Build success message
+                # Build result message, surfacing errors like the direct import
                 message_parts = []
                 if result.created_count > 0:
                     message_parts.append(f"{result.created_count} created")
                 if result.updated_count > 0:
                     message_parts.append(f"{result.updated_count} updated")
+                if result.skipped_count > 0:
+                    message_parts.append(f"{result.skipped_count} skipped")
+                if result.error_count > 0:
+                    message_parts.append(f"{result.error_count} errors")
 
-                if message_parts:
-                    messages.success(
-                        request, f"Import complete: {', '.join(message_parts)}."
+                if (
+                    result.error_count > 0
+                    and result.created_count == 0
+                    and result.updated_count == 0
+                ):
+                    error_word = "error" if result.error_count == 1 else "errors"
+
+                    messages.error(
+
+                        request,
+
+                        f"Import failed: {result.error_count} {error_word}. "
+
+                        "No places were imported.",
+
                     )
+                elif message_parts:
+                    status_msg = f"Import complete: {', '.join(message_parts)}."
+                    if result.error_count > 0:
+                        messages.warning(request, status_msg)
+                    else:
+                        messages.success(request, status_msg)
 
                 # Clear session
                 for key in [
@@ -275,8 +297,24 @@ def import_places_view(request):
                     request, "admin/places/data_management/import.html", context
                 )
 
-            # Build success message for actual import
-            if message_parts:
+            # Build result message for actual import
+            if (
+                result.error_count > 0
+                and result.created_count == 0
+                and result.updated_count == 0
+            ):
+                error_word = "error" if result.error_count == 1 else "errors"
+
+                messages.error(
+
+                    request,
+
+                    f"Import failed: {result.error_count} {error_word}. "
+
+                    "No places were imported.",
+
+                )
+            elif message_parts:
                 status_msg = f"Import complete: {', '.join(message_parts)}."
                 if result.error_count > 0:
                     messages.warning(request, status_msg)

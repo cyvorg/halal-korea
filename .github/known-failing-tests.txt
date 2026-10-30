@@ -1,23 +1,7 @@
-# Pre-existing test failures on main (bebafe4), reproduced identically with and
-# without this PR's change, using this workflow's exact test commands.
+# Pre-existing test failures on main (bebafe4) that this PR's checks ignore.
 # PR checks fail only on failures NOT listed here.
-# Source: local sequential runs, Python 3.12 / PostgreSQL 18 / PostGIS 3.6,
-# pristine main vs this branch, 2026-10-29.
-# users.test_admin_email is slow (~3 min on unmodified main) but completes; it
-# runs in its own gated step with a 360s timeout.
-places.test_search.SearchAnalyticsTest.test_category_filter_logged
-places.test_suggestions.PlaceSuggestionFormTest.test_form_requires_at_least_one_suggestion
-places.tests.HalalPlaceFormTest.test_form_category_choices
-places.tests_import_export.DataManagementViewsTests.test_import_view_dry_run
-utils.tests.test_alerts.AlertRuleEvaluationTests.test_response_time_alert_triggers
-utils.tests.test_commands.AggregateMetricsCommandTests.test_aggregate_metrics_writes_heartbeat_with_logs
-utils.tests.test_commands.AggregateMetricsCommandTests.test_aggregate_metrics_writes_heartbeat_with_no_logs
-utils.tests.test_commands.CheckMonitoringHealthCommandTests.test_metrics_freshness_ok_when_idle_no_metrics
-utils.tests.test_middleware.MonitoringMiddlewareTests.test_middleware_always_logs_slow_requests
-utils.tests.test_middleware.MonitoringMiddlewareTests.test_middleware_logs_errors
-utils.tests.test_middleware.MonitoringMiddlewareTests.test_middleware_logs_staff_user
-utils.tests.test_middleware.MonitoringMiddlewareTests.test_middleware_tracks_response_time
-users.test_social_auth.SocialAuthIntegrationTest.test_login_template_has_social_buttons
-users.test_social_auth.SocialAuthIntegrationTest.test_register_template_has_social_buttons
-users.test_social_auth.SocialAuthIntegrationTest.test_social_auth_urls_configured
-users.test_admin_email.AdminEmailEnhancedFeaturesTests.test_stale_ids_tolerated_in_all_audience_mode
+# As of 2026-10-30 the list is empty: all sixteen original pre-existing
+# failures were root-caused and repaired in this branch (stale tests,
+# cross-test pollution via leaked monitoring rows and the explore response
+# cache, and a missing form import), verified green with this workflow's
+# exact commands on Python 3.12 / PostgreSQL 18 / PostGIS 3.6.

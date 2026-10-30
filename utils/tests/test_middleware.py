@@ -1,7 +1,7 @@
 """
 Tests for monitoring middleware.
 """
-from django.test import TestCase, RequestFactory, override_settings
+from django.test import TransactionTestCase, TestCase, RequestFactory, override_settings
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse
 from utils.monitoring_middleware import (
@@ -14,7 +14,27 @@ import time
 User = get_user_model()
 
 
-class MonitoringMiddlewareTests(TestCase):
+class _ImmediateThread:
+    """Stand-in for threading.Thread that runs the target synchronously.
+
+    The middleware's daemon-thread logging races the assertions and, on
+    its own connection, can leak committed rows into later tests. Running
+    inline inside a TransactionTestCase (autocommit) makes the write
+    synchronous and visible, and table truncation keeps tests isolated.
+    """
+
+    def __init__(self, target=None, daemon=None, **kwargs):
+        self._target = target
+
+    def start(self):
+        if self._target:
+            self._target()
+
+    def join(self, timeout=None):
+        pass
+
+
+class MonitoringMiddlewareTests(TransactionTestCase):
     """Test MonitoringMiddleware."""
     
     def setUp(self):
@@ -23,10 +43,14 @@ class MonitoringMiddlewareTests(TestCase):
             username='testuser',
             password='testpass'
         )
-        
+
+        thread_patcher = patch('threading.Thread', _ImmediateThread)
+        thread_patcher.start()
+        self.addCleanup(thread_patcher.stop)
+
         def get_response(request):
             return HttpResponse('OK')
-        
+
         self.middleware = MonitoringMiddleware(get_response)
     
     @override_settings(MONITORING_ENABLED=True, MONITORING_SAMPLE_RATE=1.0)

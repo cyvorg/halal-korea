@@ -9,7 +9,7 @@ import json
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.contrib.messages.storage.fallback import FallbackStorage
 
-from .models import HalalPlace, PlaceEditSuggestion, PlaceImageSuggestion
+from .models import HalalPlace, PlaceEditSuggestion, PlaceImageSuggestion, BusinessHoursSuggestion
 from .forms import PlaceSuggestionForm
 
 User = get_user_model()
@@ -148,15 +148,16 @@ class PlaceSuggestionFormTest(TestCase):
         self.assertEqual(suggestions[0]['field_name'], 'name')
         self.assertEqual(suggestions[1]['field_name'], 'description')
     
-    def test_form_requires_at_least_one_suggestion(self):
-        """Test that form requires at least one suggestion"""
+    def test_form_allows_reason_only_submission(self):
+        """Form stays valid with only a reason: business-hours suggestions
+        arrive as hidden JSON the form cannot see, so the at-least-one-change
+        rule is enforced by the view (see SuggestionViewsTest)."""
         form_data = {
             'reason': 'Some reason'
         }
-        
+
         form = PlaceSuggestionForm(place=self.place, data=form_data)
-        self.assertFalse(form.is_valid())
-        self.assertIn('Please suggest at least one change', str(form.non_field_errors()))
+        self.assertTrue(form.is_valid())
     
     def test_form_requires_value_when_field_suggested(self):
         """Test that form requires value when field is suggested"""
@@ -226,6 +227,47 @@ class SuggestionViewsTest(TestCase):
         suggestion = PlaceEditSuggestion.objects.first()
         self.assertEqual(suggestion.field_name, 'name')
         self.assertEqual(suggestion.suggested_value, 'Updated Restaurant Name')
+
+    def test_suggest_edit_post_without_any_suggestion_rejected(self):
+        """View enforces at least one change when nothing is suggested"""
+        self.client.login(username='testuser', password='testpass123')
+        url = reverse('places:suggest_place_edit', args=[self.place.pk])
+
+        response = self.client.post(url, {'reason': 'Just a reason'}, follow=True)
+
+        self.assertEqual(PlaceEditSuggestion.objects.count(), 0)
+        msgs = [str(m) for m in response.context['messages']]
+        self.assertTrue(
+            any('Please suggest at least one change' in m for m in msgs),
+            f"expected an at-least-one-change warning, got: {msgs}",
+        )
+
+    def test_suggest_edit_post_business_hours_only_accepted(self):
+        """A reason-only form submission carrying a genuine business-hours
+        payload is valid and creates a BusinessHoursSuggestion"""
+        self.client.login(username='testuser', password='testpass123')
+        url = reverse('places:suggest_place_edit', args=[self.place.pk])
+
+        hours_payload = json.dumps({
+            'is_24_hours': False,
+            'notes': 'Closed for lunch',
+            'hours': {'1': [{'open': '09:00', 'close': '18:00'}]},
+        })
+
+        response = self.client.post(url, {
+            'reason': 'Hours have changed',
+            'suggest_business_hours': 'true',
+            'business_hours_json': hours_payload,
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(BusinessHoursSuggestion.objects.count(), 1)
+        suggestion = BusinessHoursSuggestion.objects.first()
+        self.assertEqual(suggestion.place, self.place)
+        self.assertEqual(
+            suggestion.suggested_hours, {'1': [{'open': '09:00', 'close': '18:00'}]}
+        )
+        self.assertEqual(PlaceEditSuggestion.objects.count(), 0)
     
     def test_suggest_edit_with_image_upload(self):
         """Test posting suggestion with image upload"""

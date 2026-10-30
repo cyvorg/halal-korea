@@ -402,8 +402,13 @@ class FuzzySearchTest(TestCase):
 
 class SearchAnalyticsTest(TestCase):
     """Test search analytics tracking"""
-    
+
     def setUp(self):
+        # The explore view caches full responses for anonymous users; a
+        # cached hit skips analytics logging. Clear the shared locmem cache
+        # so assertions never depend on another test's cached response.
+        from django.core.cache import cache
+        cache.clear()
         self.client = Client()
         self.user = User.objects.create_user(
             username='testuser',

@@ -2,7 +2,10 @@
 Tests for social authentication integration
 """
 
-from django.test import TestCase, RequestFactory
+import copy
+
+from django.conf import settings
+from django.test import TestCase, RequestFactory, override_settings
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from unittest.mock import patch, MagicMock
@@ -17,7 +20,20 @@ class SocialAuthIntegrationTest(TestCase):
     
     def setUp(self):
         self.factory = RequestFactory()
-        
+
+        # Settings configure OAuth apps via SOCIALACCOUNT_PROVIDERS["..."]["APP"];
+        # allauth merges those with DB SocialApps, so a DB app for the same
+        # provider would surface as MultipleObjectsReturned. Strip the
+        # settings-level apps so the DB apps below are the only ones.
+        providers = copy.deepcopy(settings.SOCIALACCOUNT_PROVIDERS)
+        for provider_config in providers.values():
+            provider_config.pop("APP", None)
+        self._providers_override = override_settings(
+            SOCIALACCOUNT_PROVIDERS=providers
+        )
+        self._providers_override.enable()
+        self.addCleanup(self._providers_override.disable)
+
         # Clear any existing social apps to avoid duplicates
         SocialApp.objects.all().delete()
         
@@ -98,22 +114,23 @@ class SocialAuthIntegrationTest(TestCase):
         response = self.client.get(reverse('users:login'))
         self.assertEqual(response.status_code, 200)
         
-        # Check for social login elements
-        self.assertContains(response, 'provider_login_url')
+        # Check for social login elements (the provider_login_url template tag
+        # renders to URLs; only Google and GitHub buttons exist)
+        self.assertContains(response, '/accounts/google/login/')
+        self.assertContains(response, '/accounts/github/login/')
         self.assertContains(response, 'Google')
         self.assertContains(response, 'GitHub')
-        self.assertContains(response, 'Twitter')
     
     def test_register_template_has_social_buttons(self):
         """Test that register template includes social signup buttons"""
         response = self.client.get(reverse('users:register'))
         self.assertEqual(response.status_code, 200)
         
-        # Check for social signup elements
-        self.assertContains(response, 'provider_login_url')
+        # Check for social signup elements (rendered URLs, not the tag name)
+        self.assertContains(response, '/accounts/google/login/')
+        self.assertContains(response, '/accounts/github/login/')
         self.assertContains(response, 'Google')
         self.assertContains(response, 'GitHub')
-        self.assertContains(response, 'Twitter')
     
     def test_social_auth_urls_configured(self):
         """Test that social auth URLs are properly configured"""

@@ -914,7 +914,7 @@ Imported CSV Place,From CSV import,market,456 CSV Import,37.6,127.6,pending"""
         self.assertEqual(response.status_code, 302)
 
     def test_import_view_dry_run(self):
-        """Test import view with dry-run option."""
+        """Dry-run shows an in-page preview and saves nothing."""
         self.client.login(username="staffuser", password="staffpass123")
 
         initial_count = HalalPlace.objects.count()
@@ -945,9 +945,109 @@ Imported CSV Place,From CSV import,market,456 CSV Import,37.6,127.6,pending"""
             },
         )
 
-        self.assertEqual(response.status_code, 302)
+        # Dry-run renders the preview page instead of redirecting
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["show_results"])
         # Count should not have changed
         self.assertEqual(HalalPlace.objects.count(), initial_count)
+        # Preview content is stored in session for the confirm step
+        self.assertEqual(
+            self.client.session["import_preview_content"], json_data
+        )
+        self.assertEqual(self.client.session["import_preview_format"], "json")
+
+    def test_import_view_dry_run_confirm(self):
+        """Confirming a dry-run preview performs the import."""
+        self.client.login(username="staffuser", password="staffpass123")
+
+        json_data = json.dumps(
+            [
+                {
+                    "name": "Dry Run Confirmed Place",
+                    "description": "Saved after confirm",
+                    "category": "restaurant",
+                    "address": "789 Dry Run Street",
+                    "latitude": 37.5,
+                    "longitude": 127.5,
+                    "status": "pending",
+                }
+            ]
+        )
+
+        uploaded_file = SimpleUploadedFile(
+            "places.json", json_data.encode("utf-8"), content_type="application/json"
+        )
+
+        preview = self.client.post(
+            reverse("places_data_management:import_places"),
+            {
+                "import_file": uploaded_file,
+                "format": "json",
+                "dry_run": "on",
+                "update_existing": "on",
+            },
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertFalse(
+            HalalPlace.objects.filter(name="Dry Run Confirmed Place").exists()
+        )
+
+        response = self.client.post(
+            reverse("places_data_management:import_places"),
+            {"confirm_import": "true"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            HalalPlace.objects.filter(name="Dry Run Confirmed Place").exists()
+        )
+
+    def test_import_view_dry_run_confirm_surfaces_errors(self):
+        """A confirm that fails on write reports errors instead of silence."""
+        self.client.login(username="staffuser", password="staffpass123")
+
+        # No coordinates: location is NOT NULL, so the write must fail
+        json_data = json.dumps(
+            [
+                {
+                    "name": "Confirm Fails Place",
+                    "description": "Will fail on write",
+                    "category": "restaurant",
+                    "address": "789 Dry Run Street",
+                    "status": "pending",
+                }
+            ]
+        )
+
+        uploaded_file = SimpleUploadedFile(
+            "places.json", json_data.encode("utf-8"), content_type="application/json"
+        )
+
+        preview = self.client.post(
+            reverse("places_data_management:import_places"),
+            {
+                "import_file": uploaded_file,
+                "format": "json",
+                "dry_run": "on",
+                "update_existing": "on",
+            },
+        )
+        self.assertEqual(preview.status_code, 200)
+
+        response = self.client.post(
+            reverse("places_data_management:import_places"),
+            {"confirm_import": "true"},
+            follow=True,
+        )
+
+        msgs = [str(m) for m in response.context["messages"]]
+        self.assertTrue(
+            any("Import failed: 1 error." in m for m in msgs),
+            f"expected a failure message, got: {msgs}",
+        )
+        self.assertFalse(
+            HalalPlace.objects.filter(name="Confirm Fails Place").exists()
+        )
 
     def test_validate_ajax_endpoint_valid(self):
         """Test AJAX validation endpoint with valid file."""

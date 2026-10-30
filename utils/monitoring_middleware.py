@@ -5,7 +5,7 @@ import time
 import random
 from django.conf import settings
 from django.utils import timezone
-from django.db import connection
+from django.db import connection, transaction
 from django.core.cache import cache
 from utils.models import RequestLog, AdminAction, hash_ip, hash_user_agent
 import logging
